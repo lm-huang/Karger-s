@@ -80,46 +80,6 @@ set1 = []
 set2 =[]
 
 layout_cache = {}
-# Create graph visualization layout
-# def create_graph_figure(G, next_edge=None, cut_edges=None):
-#     pos = nx.spring_layout(G)
-#     edge_trace = []
-#     node_trace = go.Scatter(
-#         x=[],
-#         y=[],
-#         text=[],
-#         mode='markers+text',
-#         marker=dict(size=10, color='darkblue', line=dict(width=2)),
-#         textposition="top center"
-#     )
-#
-#     for node in G.nodes():
-#         x, y = pos[node]
-#         node_trace['x'] += (x,)
-#         node_trace['y'] += (y,)
-#         node_trace['text'] += (str(node),)
-#
-#     for edge in G.edges():
-#         x0, y0 = pos[edge[0]]
-#         x1, y1 = pos[edge[1]]
-#         color = 'red' if cut_edges and edge in cut_edges else 'blue' if next_edge == edge else 'gray'
-#         edge_trace.append(go.Scatter(
-#             x=[x0, x1, None],
-#             y=[y0, y1, None],
-#             line=dict(width=2, color=color),
-#             mode='lines'
-#         ))
-#
-#     fig = go.Figure(data=edge_trace + [node_trace])
-#     fig.update_layout(showlegend=False)
-#     fig.update_xaxes(showgrid=False, zeroline=False)
-#     fig.update_yaxes(showgrid=False, zeroline=False)
-#     fig.update_layout(
-#         plot_bgcolor="white",
-#         title="Graph Visualization",
-#         margin=dict(l=0, r=0, t=40, b=0)
-#     )
-#     return fig
 
 def create_graph_figure(G, next_edge=None, cut_edges=None):
 
@@ -169,12 +129,11 @@ def create_graph_figure(G, next_edge=None, cut_edges=None):
 
     return fig
 
-def contracted_edge(G, edge):
+def contracted_edge(G, edge, i):
     a, b = edge
-    H = G.copy()
-    edges_to_remap = list(H.edges(b))
-    print("b's edges:",edges_to_remap)
-    H.remove_node(b)
+    edges_to_remap = list(G.edges(b))
+    #print("b's edges:",edges_to_remap)
+    G.remove_node(b)
 
     for u, v in edges_to_remap:
         if u == b:
@@ -183,11 +142,13 @@ def contracted_edge(G, edge):
             v = a
         if {u, v} == {a, b}:
             continue
+        if u == v:
+            continue
 
-        if not H.has_edge(u, v):
-            H.add_edge(u, v)
-
-    return H
+        if not G.has_edge(u, v):
+            G.add_edge(u, v)
+    print("i:", i, "cancel", b)
+    return G
 
 # Karger's Minimum Cut Algorithm
 def karger_min_cut(G):
@@ -195,13 +156,17 @@ def karger_min_cut(G):
     cut = set([])
     node_map = {node: {node} for node in G.nodes}
     H = G.copy()
-    while len(G.nodes) > 2:
+    i = 0
+    print("edge",G.edges)
+    while len(G.edges()) > 1:
+        i += 1
         edge = random.choice(list(G.edges()))
         u, v = edge
         steps.append((G.copy(), edge))
         node_map[u] = node_map[u].union(node_map[v])
         node_map.pop(v)
-        G = contracted_edge(G, edge)
+        G = contracted_edge(G, edge, i)
+        print("i:",i, "node_map:", node_map, "edges", edge, "G", G.edges(), "nodes_num:", G.nodes)
     steps.append((G.copy(),list(G.edges)[0]))
 
     list1, list2 = list(node_map.values())
@@ -214,7 +179,10 @@ def karger_min_cut(G):
 
     print(steps)
     print(node_map)
-    return steps, len(cut), set1, set2
+    cnt = 0
+    if cut:
+        cnt = len(cut)
+    return steps, cnt, set1, set2
 
 @app.callback(
     Output('graph-visualization', 'figure'),
@@ -229,14 +197,20 @@ def karger_min_cut(G):
     State('edge-count', 'value'),
     prevent_initial_call=True
 )
+
+
+
 def update_graph(generate_clicks, next_clicks, prev_clicks, node_count, edge_count):
     #next_step 禁用状态  prev_step 禁用状态
     global graph, steps, current_step, min_cut, set1, set2
     ctx_triggered = ctx.triggered_id
 
+
     if ctx_triggered == 'generate-graph':
         # Generate a random graph
         graph = nx.gnm_random_graph(node_count, edge_count)
+        if not nx.is_connected(graph):
+            raise Exception('Graph is not connected')
         steps, min_cut, set1, set2 = karger_min_cut(graph.copy())
         current_step = 0
         # Display the first step (edge to be contracted)
